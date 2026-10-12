@@ -11,6 +11,7 @@ import com.example.data.MediaFileItem
 import com.example.data.PreparedShareBundle
 import com.example.data.SortOption
 import com.example.data.StorageInfo
+import com.example.data.StoragePermissionState
 import com.example.data.ThemeMode
 import com.example.data.UserProfile
 import com.example.data.UserPreferencesRepository
@@ -32,7 +33,7 @@ data class ProfileEditState(
 
 data class FileManagerUiState(
     val isLoading: Boolean = false,
-    val permissionGranted: Boolean = false,
+    val permissionState: StoragePermissionState = StoragePermissionState(),
     val storageInfo: StorageInfo? = null,
     val allFiles: List<MediaFileItem> = emptyList(),
     val selectedCategory: FileCategory = FileCategory.ALL,
@@ -44,6 +45,12 @@ data class FileManagerUiState(
     val activeFileDetails: MediaFileItem? = null,
     val errorMessage: String? = null
 ) {
+    val permissionGranted: Boolean
+        get() = permissionState.hasAnyPermission
+
+    val isCategoryPermitted: Boolean
+        get() = permissionState.isCategoryPermitted(selectedCategory)
+
     val filteredFiles: List<MediaFileItem>
         get() {
             var result = if (selectedCategory == FileCategory.ALL) {
@@ -238,39 +245,57 @@ class MainViewModel(
     // File Manager Logic
     // ==========================================
 
-    fun loadStorageAndFiles(hasPermission: Boolean) {
+    fun updatePermissions(permissions: StoragePermissionState) {
+        _fileManagerUiState.value = _fileManagerUiState.value.copy(permissionState = permissions)
+        loadStorageAndFiles(permissions)
+    }
+
+    fun loadStorageAndFiles(permissions: StoragePermissionState = _fileManagerUiState.value.permissionState) {
         viewModelScope.launch {
             _fileManagerUiState.value = _fileManagerUiState.value.copy(
                 isLoading = true,
-                permissionGranted = hasPermission,
+                permissionState = permissions,
                 errorMessage = null
             )
 
             val storage = fileManagerRepository.getStorageInfo()
 
-            if (hasPermission) {
-                try {
-                    val files = fileManagerRepository.queryAccessibleFiles()
-                    _fileManagerUiState.value = _fileManagerUiState.value.copy(
-                        isLoading = false,
-                        storageInfo = storage,
-                        allFiles = files
-                    )
-                } catch (e: Exception) {
-                    _fileManagerUiState.value = _fileManagerUiState.value.copy(
-                        isLoading = false,
-                        storageInfo = storage,
-                        errorMessage = e.localizedMessage
-                    )
-                }
-            } else {
+            try {
+                val files = fileManagerRepository.queryAccessibleFiles(permissions)
                 _fileManagerUiState.value = _fileManagerUiState.value.copy(
                     isLoading = false,
                     storageInfo = storage,
-                    allFiles = emptyList()
+                    allFiles = files,
+                    errorMessage = null
+                )
+            } catch (e: Exception) {
+                _fileManagerUiState.value = _fileManagerUiState.value.copy(
+                    isLoading = false,
+                    storageInfo = storage,
+                    errorMessage = e.localizedMessage ?: "Failed to query accessible files"
                 )
             }
         }
+    }
+
+    fun loadStorageAndFiles(hasPermission: Boolean) {
+        val permissions = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            StoragePermissionState(
+                imagesGranted = hasPermission,
+                videosGranted = hasPermission,
+                audioGranted = hasPermission,
+                hasRequested = true
+            )
+        } else {
+            StoragePermissionState(
+                storageGranted = hasPermission,
+                imagesGranted = hasPermission,
+                videosGranted = hasPermission,
+                audioGranted = hasPermission,
+                hasRequested = true
+            )
+        }
+        loadStorageAndFiles(permissions)
     }
 
     fun onPermissionResult(granted: Boolean) {

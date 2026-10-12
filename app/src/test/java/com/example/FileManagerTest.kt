@@ -218,4 +218,75 @@ class FileManagerTest {
 
         controller.destroy()
     }
+
+    @Test
+    fun storagePermissionState_evaluatesCategoryAccessCorrectly() {
+        // Full permissions
+        val fullState = com.example.data.StoragePermissionState(
+            imagesGranted = true,
+            videosGranted = true,
+            audioGranted = true,
+            storageGranted = true
+        )
+        assertTrue(fullState.isCategoryPermitted(FileCategory.IMAGES))
+        assertTrue(fullState.isCategoryPermitted(FileCategory.VIDEOS))
+        assertTrue(fullState.isCategoryPermitted(FileCategory.AUDIO))
+        assertTrue(fullState.isFullyGranted)
+        assertFalse(fullState.isPartiallyGranted)
+
+        // Partial permissions: images only
+        val partialState = com.example.data.StoragePermissionState(
+            imagesGranted = true,
+            videosGranted = false,
+            audioGranted = false,
+            storageGranted = false
+        )
+        assertTrue(partialState.isCategoryPermitted(FileCategory.IMAGES))
+        assertFalse(partialState.isCategoryPermitted(FileCategory.VIDEOS))
+        assertFalse(partialState.isCategoryPermitted(FileCategory.AUDIO))
+        assertTrue(partialState.hasAnyPermission)
+        assertTrue(partialState.isPartiallyGranted)
+        assertFalse(partialState.isFullyGranted)
+
+        // Denied state
+        val deniedState = com.example.data.StoragePermissionState(
+            imagesGranted = false,
+            videosGranted = false,
+            audioGranted = false,
+            storageGranted = false,
+            isPermanentlyDenied = true
+        )
+        assertFalse(deniedState.isCategoryPermitted(FileCategory.IMAGES))
+        assertFalse(deniedState.hasAnyPermission)
+        assertTrue(deniedState.isPermanentlyDenied)
+    }
+
+    @Test
+    fun storagePermissionState_requiredPermissionsPerCategory() {
+        val imagePerms = com.example.data.StoragePermissionState.getRequiredPermissionsForCategory(FileCategory.IMAGES)
+        assertTrue(imagePerms.contains(android.Manifest.permission.READ_MEDIA_IMAGES))
+
+        val audioPerms = com.example.data.StoragePermissionState.getRequiredPermissionsForCategory(FileCategory.AUDIO)
+        assertEquals(listOf(android.Manifest.permission.READ_MEDIA_AUDIO), audioPerms)
+
+        val videoPerms = com.example.data.StoragePermissionState.getRequiredPermissionsForCategory(FileCategory.VIDEOS)
+        assertTrue(videoPerms.contains(android.Manifest.permission.READ_MEDIA_VIDEO))
+    }
+
+    @Test
+    fun mainViewModel_updatePermissionsRefreshesState() {
+        val prefsRepo = UserPreferencesRepository(app)
+        val viewModel = MainViewModel(app, prefsRepo)
+
+        val permissionState = com.example.data.StoragePermissionState(
+            imagesGranted = true,
+            videosGranted = true,
+            audioGranted = true,
+            hasRequested = true
+        )
+
+        viewModel.updatePermissions(permissionState)
+        assertEquals(permissionState, viewModel.fileManagerUiState.value.permissionState)
+        assertTrue(viewModel.fileManagerUiState.value.permissionGranted)
+    }
 }

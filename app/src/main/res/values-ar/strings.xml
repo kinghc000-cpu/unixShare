@@ -118,4 +118,15 @@
     <string name="prepared_bundle_desc">تم تحديد %1$d ملف (%2$s). هذه الملفات جاهزة ومجهزة في الذاكرة لنقل Unex SHARE.</string>
     <string name="prepared_bundle_done">تم</string>
     <string name="home_open_file_manager">تصفح ومشاركة الملفات</string>
+    <string name="query_failure_title">فشل في تحميل الملفات</string>
+    <string name="query_failure_desc">تعذر الوصول إلى وسائط التخزين: %1$s</string>
+    <string name="permission_partial_banner">تم منح وصول جزئي للوسائط. قد تتطلب بعض الفئات إذناً إضافياً.</string>
+    <string name="empty_search_desc">لم يتم العثور على ملفات مطابقة لـ \"%1$s\". جرب تعديل البحث أو استعراض مواقع أخرى.</string>
+    <string name="permission_category_desc">يلزم الحصول على إذن لعرض ملفات %1$s من ذاكرة الجهاز.</string>
+    <string name="permission_denied_title">تم رفض الإذن</string>
+    <string name="permission_denied_settings_desc">تم تقييد الوصول إلى سعة التخزين في إعدادات النظام. يرجى فتح إعدادات التطبيق وتفعيل إذن الملفات لـ Unex SHARE.</string>
+    <string name="open_settings_button">فتح الإعدادات</string>
+    <string name="permission_rationale_title">مطلوب إذن التخزين</string>
+    <string name="permission_rationale_desc">يحتاج Unex SHARE إلى إذن الوصول إلى %1$s لتصفح وتجهيز الملفات للمشاركة الفورية بين الأجهزة.</string>
+    <string name="empty_category_files_desc">لا توجد ملفات %1$s متاحة على هذا الجهاز.</string>
 </resources>

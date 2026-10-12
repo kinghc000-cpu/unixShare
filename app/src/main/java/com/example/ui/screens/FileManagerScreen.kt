@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Videocam
@@ -128,7 +129,9 @@ fun FileManagerScreen(
     onClearPreparedBundle: () -> Unit,
     onShowFileDetails: (MediaFileItem?) -> Unit,
     onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRequestCategoryPermission: (FileCategory) -> Unit = { onRequestPermissions() },
+    onOpenAppSettings: () -> Unit = {}
 ) {
     BackHandler(onBack = onNavigateBack)
 
@@ -372,11 +375,18 @@ fun FileManagerScreen(
                 onCategorySelect = onCategorySelect
             )
 
-            // Permission denied warning banner
+            // Permission warning banners
             if (!state.permissionGranted) {
                 PermissionRequestBanner(
-                    onGrantClick = onRequestPermissions,
-                    onBrowseSafClick = onBrowseSafFiles
+                    onGrantClick = { onRequestCategoryPermission(state.selectedCategory) },
+                    onBrowseSafClick = onBrowseSafFiles,
+                    isPermanentlyDenied = state.permissionState.isPermanentlyDenied,
+                    onOpenSettings = onOpenAppSettings
+                )
+            } else if (state.permissionState.isPartiallyGranted && !state.isCategoryPermitted) {
+                PartialPermissionBanner(
+                    category = state.selectedCategory,
+                    onGrantClick = { onRequestCategoryPermission(state.selectedCategory) }
                 )
             }
 
@@ -409,7 +419,33 @@ fun FileManagerScreen(
                     }
 
                     state.filteredFiles.isEmpty() -> {
-                        EmptyFilesView()
+                        val isCategoryPermitted = state.isCategoryPermitted
+                        val isPermanentlyDenied = state.permissionState.isPermanentlyDenied
+
+                        when {
+                            !isCategoryPermitted && !isPermanentlyDenied -> {
+                                EmptyStatePermissionNotGranted(
+                                    category = state.selectedCategory,
+                                    onRequestPermission = { onRequestCategoryPermission(state.selectedCategory) },
+                                    onBrowseSafClick = onBrowseSafFiles
+                                )
+                            }
+                            !isCategoryPermitted && isPermanentlyDenied -> {
+                                EmptyStatePermissionDenied(
+                                    category = state.selectedCategory,
+                                    onOpenSettings = onOpenAppSettings,
+                                    onRetry = { onRequestCategoryPermission(state.selectedCategory) },
+                                    onBrowseSafClick = onBrowseSafFiles
+                                )
+                            }
+                            else -> {
+                                EmptyStateNoFiles(
+                                    category = state.selectedCategory,
+                                    searchQuery = state.searchQuery,
+                                    onBrowseSafClick = onBrowseSafFiles
+                                )
+                            }
+                        }
                     }
 
                     state.viewMode == ViewMode.LIST -> {
@@ -648,7 +684,9 @@ private fun CategoryShortcutsRow(
 @Composable
 private fun PermissionRequestBanner(
     onGrantClick: () -> Unit,
-    onBrowseSafClick: () -> Unit
+    onBrowseSafClick: () -> Unit,
+    isPermanentlyDenied: Boolean = false,
+    onOpenSettings: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier
@@ -666,13 +704,15 @@ private fun PermissionRequestBanner(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Lock,
+                    imageVector = if (isPermanentlyDenied) Icons.Default.Settings else Icons.Default.Lock,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
-                    text = stringResource(R.string.permission_storage_title),
+                    text = stringResource(
+                        if (isPermanentlyDenied) R.string.permission_denied_title else R.string.permission_storage_title
+                    ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer
@@ -682,7 +722,9 @@ private fun PermissionRequestBanner(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = stringResource(R.string.permission_storage_desc),
+                text = stringResource(
+                    if (isPermanentlyDenied) R.string.permission_denied_settings_desc else R.string.permission_storage_desc
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
             )
@@ -690,15 +732,28 @@ private fun PermissionRequestBanner(
             Spacer(modifier = Modifier.height(10.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onGrantClick,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    ),
-                    modifier = Modifier.testTag("btn_grant_permission")
-                ) {
-                    Text(stringResource(R.string.permission_grant_button))
+                if (isPermanentlyDenied) {
+                    Button(
+                        onClick = onOpenSettings,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.testTag("btn_banner_open_settings")
+                    ) {
+                        Text(stringResource(R.string.open_settings_button))
+                    }
+                } else {
+                    Button(
+                        onClick = onGrantClick,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.testTag("btn_grant_permission")
+                    ) {
+                        Text(stringResource(R.string.permission_grant_button))
+                    }
                 }
 
                 OutlinedButton(
@@ -707,6 +762,52 @@ private fun PermissionRequestBanner(
                 ) {
                     Text(stringResource(R.string.browse_other_locations))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PartialPermissionBanner(
+    category: FileCategory,
+    onGrantClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .testTag("partial_permission_banner"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.permission_partial_banner),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = onGrantClick,
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.testTag("btn_partial_grant")
+            ) {
+                Text(
+                    text = stringResource(R.string.permission_grant_button),
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
         }
     }
@@ -993,18 +1094,191 @@ private fun FileCategoryIconBox(
 }
 
 @Composable
-private fun EmptyFilesView() {
+private fun EmptyStatePermissionNotGranted(
+    category: FileCategory,
+    onRequestPermission: () -> Unit,
+    onBrowseSafClick: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp)
-            .testTag("empty_files_view"),
+            .testTag("empty_state_permission_not_granted"),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
             modifier = Modifier
-                .size(60.dp)
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = stringResource(R.string.permission_storage_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        val catName = getCategoryDisplayName(category)
+        Text(
+            text = stringResource(R.string.permission_category_desc, catName),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Button(
+            onClick = onRequestPermission,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.testTag("btn_grant_permission")
+        ) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.permission_grant_button))
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onBrowseSafClick,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.testTag("btn_empty_saf")
+        ) {
+            Text(stringResource(R.string.browse_other_locations))
+        }
+    }
+}
+
+@Composable
+private fun EmptyStatePermissionDenied(
+    category: FileCategory,
+    onOpenSettings: () -> Unit,
+    onRetry: () -> Unit,
+    onBrowseSafClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .testTag("empty_state_permission_denied"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(32.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = stringResource(R.string.permission_denied_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = stringResource(R.string.permission_denied_settings_desc),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Button(
+            onClick = onOpenSettings,
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error
+            ),
+            modifier = Modifier.testTag("btn_open_settings")
+        ) {
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.open_settings_button))
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = onRetry,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.testTag("btn_retry_permission")
+            ) {
+                Text(stringResource(R.string.retry))
+            }
+
+            OutlinedButton(
+                onClick = onBrowseSafClick,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.testTag("btn_empty_saf_denied")
+            ) {
+                Text(stringResource(R.string.browse_other_locations))
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyStateNoFiles(
+    category: FileCategory,
+    searchQuery: String,
+    onBrowseSafClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .testTag("empty_state_no_files"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
@@ -1013,11 +1287,11 @@ private fun EmptyFilesView() {
                 imageVector = Icons.Default.FolderOpen,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(30.dp)
+                modifier = Modifier.size(32.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
             text = stringResource(R.string.empty_files_title),
@@ -1026,16 +1300,55 @@ private fun EmptyFilesView() {
             color = MaterialTheme.colorScheme.onSurface
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
+
+        val desc = if (searchQuery.isNotBlank()) {
+            stringResource(R.string.empty_search_desc, searchQuery)
+        } else {
+            val catName = getCategoryDisplayName(category)
+            stringResource(R.string.empty_category_files_desc, catName)
+        }
 
         Text(
-            text = stringResource(R.string.empty_files_desc),
+            text = desc,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 20.dp)
         )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        OutlinedButton(
+            onClick = onBrowseSafClick,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.testTag("btn_empty_saf_nofiles")
+        ) {
+            Text(stringResource(R.string.browse_other_locations))
+        }
     }
+}
+
+@Composable
+private fun getCategoryDisplayName(category: FileCategory): String {
+    return when (category) {
+        FileCategory.ALL -> stringResource(R.string.category_all)
+        FileCategory.IMAGES -> stringResource(R.string.category_images)
+        FileCategory.VIDEOS -> stringResource(R.string.category_videos)
+        FileCategory.AUDIO -> stringResource(R.string.category_audio)
+        FileCategory.DOCUMENTS -> stringResource(R.string.category_documents)
+        FileCategory.DOWNLOADS -> stringResource(R.string.category_downloads)
+        FileCategory.OTHER -> stringResource(R.string.category_other)
+    }
+}
+
+@Composable
+private fun EmptyFilesView() {
+    EmptyStateNoFiles(
+        category = FileCategory.ALL,
+        searchQuery = "",
+        onBrowseSafClick = {}
+    )
 }
 
 @Composable

@@ -48,32 +48,71 @@ class FileManagerRepository(
         }
     }
 
-    suspend fun queryAccessibleFiles(): List<MediaFileItem> = withContext(ioDispatcher) {
+    suspend fun queryAccessibleFiles(
+        permissions: StoragePermissionState = StoragePermissionState(
+            imagesGranted = true,
+            videosGranted = true,
+            audioGranted = true,
+            storageGranted = true
+        )
+    ): List<MediaFileItem> = withContext(ioDispatcher) {
         val fileList = mutableListOf<MediaFileItem>()
 
-        // 1. Query Images
-        queryMediaStoreCategory(
-            contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            defaultCategory = FileCategory.IMAGES,
-            targetList = fileList
-        )
+        val canQueryImages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.imagesGranted || permissions.visualUserSelected
+        } else {
+            permissions.storageGranted
+        }
 
-        // 2. Query Videos
-        queryMediaStoreCategory(
-            contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            defaultCategory = FileCategory.VIDEOS,
-            targetList = fileList
-        )
+        val canQueryVideos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.videosGranted || permissions.visualUserSelected
+        } else {
+            permissions.storageGranted
+        }
 
-        // 3. Query Audio
-        queryMediaStoreCategory(
-            contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            defaultCategory = FileCategory.AUDIO,
-            targetList = fileList
-        )
+        val canQueryAudio = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.audioGranted
+        } else {
+            permissions.storageGranted
+        }
+
+        // 1. Query Images if permitted
+        if (canQueryImages) {
+            queryMediaStoreCategory(
+                contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                defaultCategory = FileCategory.IMAGES,
+                targetList = fileList
+            )
+        }
+
+        // 2. Query Videos if permitted
+        if (canQueryVideos) {
+            queryMediaStoreCategory(
+                contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                defaultCategory = FileCategory.VIDEOS,
+                targetList = fileList
+            )
+        }
+
+        // 3. Query Audio if permitted
+        if (canQueryAudio) {
+            queryMediaStoreCategory(
+                contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                defaultCategory = FileCategory.AUDIO,
+                targetList = fileList
+            )
+        }
+
+        val canQueryDocuments = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            true
+        } else {
+            permissions.storageGranted
+        }
 
         // 4. Query Documents and Downloads via MediaStore.Files
-        queryMediaStoreDocuments(fileList)
+        if (canQueryDocuments) {
+            queryMediaStoreDocuments(fileList)
+        }
 
         // Return sorted by date modified descending by default
         fileList.sortedByDescending { it.dateModified }
