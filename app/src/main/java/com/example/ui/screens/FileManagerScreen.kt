@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Description
@@ -131,7 +132,8 @@ fun FileManagerScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
     onRequestCategoryPermission: (FileCategory) -> Unit = { onRequestPermissions() },
-    onOpenAppSettings: () -> Unit = {}
+    onOpenAppSettings: () -> Unit = {},
+    onNavigateToApps: () -> Unit = {}
 ) {
     BackHandler(onBack = onNavigateBack)
 
@@ -282,6 +284,17 @@ fun FileManagerScreen(
                         Icon(
                             imageVector = Icons.Default.SelectAll,
                             contentDescription = stringResource(R.string.select_all)
+                        )
+                    }
+
+                    // Browse Apps
+                    IconButton(
+                        onClick = onNavigateToApps,
+                        modifier = Modifier.testTag("btn_file_manager_apps")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Apps,
+                            contentDescription = stringResource(R.string.open_app_manager)
                         )
                     }
                 },

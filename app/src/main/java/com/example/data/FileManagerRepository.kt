@@ -109,13 +109,73 @@ class FileManagerRepository(
             permissions.storageGranted
         }
 
-        // 4. Query Documents and Downloads via MediaStore.Files
+        // 4. Query Documents and Files via MediaStore.Files
         if (canQueryDocuments) {
             queryMediaStoreDocuments(fileList)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                queryMediaStoreDownloads(fileList)
+            }
         }
 
         // Return sorted by date modified descending by default
         fileList.sortedByDescending { it.dateModified }
+    }
+
+    private fun queryMediaStoreDownloads(targetList: MutableList<MediaFileItem>) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.DATE_MODIFIED
+        )
+
+        try {
+            val cursor = context.contentResolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+            )
+
+            cursor?.use {
+                val idCol = it.getColumnIndex(MediaStore.MediaColumns._ID)
+                val nameCol = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val sizeCol = it.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                val mimeCol = it.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                val dateCol = it.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+
+                while (it.moveToNext()) {
+                    if (idCol != -1) {
+                        val id = it.getLong(idCol)
+                        val name = if (nameCol != -1) it.getString(nameCol) ?: "Download" else "Download"
+                        val size = if (sizeCol != -1) it.getLong(sizeCol).coerceAtLeast(0L) else 0L
+                        val mime = if (mimeCol != -1) it.getString(mimeCol) ?: "application/octet-stream" else "application/octet-stream"
+                        val dateModified = if (dateCol != -1) it.getLong(dateCol) else 0L
+                        val uri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+                        val category = resolveCategoryFromMime(mime, name)
+
+                        if (targetList.none { existing -> existing.uri == uri }) {
+                            targetList.add(
+                                MediaFileItem(
+                                    id = id,
+                                    uri = uri,
+                                    name = name,
+                                    size = size,
+                                    mimeType = mime,
+                                    dateModified = dateModified,
+                                    category = if (category == FileCategory.OTHER) FileCategory.DOWNLOADS else category
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error querying MediaStore for Downloads", e)
+        }
     }
 
     private fun queryMediaStoreCategory(
@@ -187,13 +247,20 @@ class FileManagerRepository(
         val selection = "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? OR " +
                 "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? OR " +
                 "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? OR " +
-                "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ?"
+                "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? OR " +
+                "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? OR " +
+                "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? OR " +
+                "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE ? OR " +
+                "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ${MediaStore.Files.FileColumns.MEDIA_TYPE_NONE}"
 
         val selectionArgs = arrayOf(
             "application/pdf",
             "text/%",
             "application/msword%",
-            "application/vnd.openxmlformats-officedocument%"
+            "application/vnd.openxmlformats-officedocument%",
+            "application/vnd.ms-%",
+            "application/zip",
+            "application/vnd.android.package-archive"
         )
 
         try {
@@ -217,27 +284,83 @@ class FileManagerRepository(
                         val id = it.getLong(idCol)
                         val name = if (nameCol != -1) it.getString(nameCol) ?: "Document" else "Document"
                         val size = if (sizeCol != -1) it.getLong(sizeCol).coerceAtLeast(0L) else 0L
-                        val mime = if (mimeCol != -1) it.getString(mimeCol) ?: "application/pdf" else "application/pdf"
+                        val mime = if (mimeCol != -1) it.getString(mimeCol) ?: "application/octet-stream" else "application/octet-stream"
                         val dateModified = if (dateCol != -1) it.getLong(dateCol) else 0L
                         val uri = ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), id)
+                        val category = resolveCategoryFromMime(mime, name)
 
-                        targetList.add(
-                            MediaFileItem(
-                                id = id,
-                                uri = uri,
-                                name = name,
-                                size = size,
-                                mimeType = mime,
-                                dateModified = dateModified,
-                                category = FileCategory.DOCUMENTS
+                        if (targetList.none { existing -> existing.uri == uri }) {
+                            targetList.add(
+                                MediaFileItem(
+                                    id = id,
+                                    uri = uri,
+                                    name = name,
+                                    size = size,
+                                    mimeType = mime,
+                                    dateModified = dateModified,
+                                    category = if (category == FileCategory.ALL) FileCategory.DOCUMENTS else category
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error querying MediaStore for Documents", e)
         }
+    }
+
+    suspend fun resolveFilesFromTreeUri(treeUri: Uri): List<MediaFileItem> = withContext(ioDispatcher) {
+        val result = mutableListOf<MediaFileItem>()
+        try {
+            val docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
+            val projection = arrayOf(
+                android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                android.provider.DocumentsContract.Document.COLUMN_SIZE,
+                android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
+                android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED
+            )
+
+            val cursor = context.contentResolver.query(childrenUri, projection, null, null, null)
+            cursor?.use {
+                val idCol = it.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameCol = it.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val sizeCol = it.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_SIZE)
+                val mimeCol = it.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val dateCol = it.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+
+                while (it.moveToNext()) {
+                    val childDocId = if (idCol != -1) it.getString(idCol) ?: continue else continue
+                    val name = if (nameCol != -1) it.getString(nameCol) ?: "File" else "File"
+                    val size = if (sizeCol != -1) it.getLong(sizeCol).coerceAtLeast(0L) else 0L
+                    val mime = if (mimeCol != -1) it.getString(mimeCol) ?: "application/octet-stream" else "application/octet-stream"
+                    val dateModified = if (dateCol != -1) (it.getLong(dateCol) / 1000L) else (System.currentTimeMillis() / 1000L)
+
+                    // Skip directories
+                    if (mime == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) continue
+
+                    val itemUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocId)
+                    val category = resolveCategoryFromMime(mime, name)
+
+                    result.add(
+                        MediaFileItem(
+                            id = itemUri.hashCode().toLong(),
+                            uri = itemUri,
+                            name = name,
+                            size = size,
+                            mimeType = mime,
+                            dateModified = dateModified,
+                            category = category
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resolve folder documents from treeUri: $treeUri", e)
+        }
+        result
     }
 
     suspend fun resolveFileFromUri(uri: Uri): MediaFileItem? = withContext(ioDispatcher) {

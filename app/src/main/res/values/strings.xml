@@ -129,4 +129,40 @@
     <string name="permission_rationale_title">Storage Access Needed</string>
     <string name="permission_rationale_desc">Unex SHARE needs access to %1$s to browse and stage files for device sharing.</string>
     <string name="empty_category_files_desc">No accessible %1$s files were found on this device.</string>
+
+    <!-- Apps Selection & Management Strings -->
+    <string name="nav_apps">Apps</string>
+    <string name="apps_screen_title">Installed Applications</string>
+    <string name="tab_all_apps">All Apps</string>
+    <string name="tab_selected_apps">Selected Apps</string>
+    <string name="tab_selected_apps_format">Selected (%1$d)</string>
+    <string name="search_apps_hint">Search applications by name or package...</string>
+    <string name="empty_apps_title">No applications found</string>
+    <string name="empty_apps_desc">No launchable applications match your query or visibility rules.</string>
+    <string name="empty_selected_apps_title">No apps selected</string>
+    <string name="empty_selected_apps_desc">Select applications from the All Apps tab to stage them for transfer.</string>
+    <string name="clear_app_selection">Clear</string>
+    <string name="remove_app">Remove</string>
+    <string name="prepare_apps_button">Prepare Selected Apps</string>
+    <string name="prepared_apps_notice">%1$d app(s) staged (%2$s). Peer APK transfer pipeline is pending Phase 3 networking.</string>
+    <string name="apps_count_format">%1$d application(s)</string>
+    <string name="app_version_format">v%1$s</string>
+    <string name="app_system_badge">System</string>
+    <string name="home_apps_button">Applications</string>
+    <string name="home_apps_badge">Installed</string>
+    <string name="home_apps_desc">Select launchable apps from your device</string>
+    <string name="open_app_manager">Browse Apps</string>
+
+    <!-- Diagnostics & SAF Extensions -->
+    <string name="refresh">Refresh</string>
+    <string name="diagnostics_title">Storage &amp; Permission Diagnostics</string>
+    <string name="diagnostics_api_level">Android Environment</string>
+    <string name="diagnostics_permissions">Permission State</string>
+    <string name="diagnostics_files_queried">Accessible Files Loaded</string>
+    <string name="diagnostics_saf_files">SAF User-Selected Files</string>
+    <string name="diagnostics_button">Diagnostics</string>
+    <string name="browse_folder_saf">Import Folder (SAF)</string>
+    <string name="browse_files_saf">Import Files (SAF)</string>
+    <string name="partial_access_notice">Partial Access: Only selected photos/videos are accessible on Android 14+.</string>
+    <string name="select_more_photos">Manage Media Access</string>
 </resources>

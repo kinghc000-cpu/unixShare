@@ -129,4 +129,40 @@
     <string name="permission_rationale_title">مطلوب إذن التخزين</string>
     <string name="permission_rationale_desc">يحتاج Unex SHARE إلى إذن الوصول إلى %1$s لتصفح وتجهيز الملفات للمشاركة الفورية بين الأجهزة.</string>
     <string name="empty_category_files_desc">لا توجد ملفات %1$s متاحة على هذا الجهاز.</string>
+
+    <!-- Apps Selection & Management Strings in Arabic -->
+    <string name="nav_apps">التطبيقات</string>
+    <string name="apps_screen_title">التطبيقات المثبتة</string>
+    <string name="tab_all_apps">جميع التطبيقات</string>
+    <string name="tab_selected_apps">التطبيقات المحددة</string>
+    <string name="tab_selected_apps_format">المحددة (%1$d)</string>
+    <string name="search_apps_hint">البحث بالاسم أو الحزمة البرمجية...</string>
+    <string name="empty_apps_title">لم يتم العثور على تطبيقات</string>
+    <string name="empty_apps_desc">لا توجد تطبيقات قابلة للتشغيل متطابقة مع البحث.</string>
+    <string name="empty_selected_apps_title">لم يتم تحديد تطبيقات</string>
+    <string name="empty_selected_apps_desc">اختر تطبيقات من تبويب جميع التطبيقات لتجهيزها للمشاركة.</string>
+    <string name="clear_app_selection">إلغاء التحديد</string>
+    <string name="remove_app">إزالة</string>
+    <string name="prepare_apps_button">تجهيز التطبيقات المحددة</string>
+    <string name="prepared_apps_notice">تم تجهيز %1$d تطبيق (%2$s). سيتم تفعيل نقل حزم APK في المرحلة القادمة.</string>
+    <string name="apps_count_format">%1$d تطبيق</string>
+    <string name="app_version_format">إصدار %1$s</string>
+    <string name="app_system_badge">نظام</string>
+    <string name="home_apps_button">التطبيقات المثبتة</string>
+    <string name="home_apps_badge">تطبيقات</string>
+    <string name="home_apps_desc">اختر التطبيقات المثبتة على جهازك</string>
+    <string name="open_app_manager">تصفح التطبيقات</string>
+
+    <!-- Diagnostics & SAF Extensions in Arabic -->
+    <string name="refresh">تحديث</string>
+    <string name="diagnostics_title">تشخيص التخزين والأذونات</string>
+    <string name="diagnostics_api_level">بيئة نظام أندرويد</string>
+    <string name="diagnostics_permissions">حالة الأذونات</string>
+    <string name="diagnostics_files_queried">الملفات المتاحة المحمّلة</string>
+    <string name="diagnostics_saf_files">ملفات SAF المستوردة</string>
+    <string name="diagnostics_button">التشخيص</string>
+    <string name="browse_folder_saf">استيراد مجلد (SAF)</string>
+    <string name="browse_files_saf">استيراد ملفات (SAF)</string>
+    <string name="partial_access_notice">وصول جزئي: الصور ومقاطع الفيديو المحددة فقط هي المتاحة على أندرويد 14+.</string>
+    <string name="select_more_photos">إدارة وسائط الوصول</string>
 </resources>

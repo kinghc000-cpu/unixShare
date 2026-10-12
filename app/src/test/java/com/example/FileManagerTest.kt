@@ -289,4 +289,90 @@ class FileManagerTest {
         assertEquals(permissionState, viewModel.fileManagerUiState.value.permissionState)
         assertTrue(viewModel.fileManagerUiState.value.permissionGranted)
     }
+
+    @Test
+    fun mainViewModel_onPermissionResultHandlesGrantsAndDenials() {
+        val prefsRepo = UserPreferencesRepository(app)
+        val viewModel = MainViewModel(app, prefsRepo)
+
+        // Simulate granting image permission only (partial grant)
+        val imageResult = mapOf(
+            android.Manifest.permission.READ_MEDIA_IMAGES to true,
+            android.Manifest.permission.READ_MEDIA_VIDEO to false
+        )
+        viewModel.onPermissionResult(imageResult)
+        val uiState = viewModel.fileManagerUiState.value
+        assertTrue(uiState.permissionState.imagesGranted)
+        assertFalse(uiState.permissionState.videosGranted)
+        assertTrue(uiState.permissionState.isCategoryPermitted(FileCategory.IMAGES))
+        assertFalse(uiState.permissionState.isCategoryPermitted(FileCategory.VIDEOS))
+        assertTrue(uiState.permissionState.isPartiallyGranted)
+        assertFalse(uiState.permissionState.isFullyGranted)
+        assertTrue(uiState.permissionGranted) // has any permission
+
+        // Simulate complete denial
+        val deniedResult = mapOf(
+            android.Manifest.permission.READ_MEDIA_IMAGES to false,
+            android.Manifest.permission.READ_MEDIA_VIDEO to false,
+            android.Manifest.permission.READ_MEDIA_AUDIO to false
+        )
+        viewModel.onPermissionResult(deniedResult)
+        val deniedUiState = viewModel.fileManagerUiState.value
+        assertFalse(deniedUiState.permissionState.hasAnyPermission)
+        assertFalse(deniedUiState.permissionGranted)
+    }
+
+    @Test
+    fun storagePermissionState_visualUserSelectedPartialAccess() {
+        val visualOnly = com.example.data.StoragePermissionState(
+            imagesGranted = false,
+            videosGranted = false,
+            visualUserSelected = true
+        )
+        assertTrue(visualOnly.isCategoryPermitted(FileCategory.IMAGES))
+        assertTrue(visualOnly.isCategoryPermitted(FileCategory.VIDEOS))
+        assertFalse(visualOnly.isCategoryPermitted(FileCategory.AUDIO))
+        assertTrue(visualOnly.hasAnyPermission)
+        assertTrue(visualOnly.isPartiallyGranted)
+    }
+
+    @Test
+    fun fileManagerUiState_emptyStateDistinctions() {
+        // 1. Permission not granted state
+        val unpermittedState = FileManagerUiState(
+            permissionState = com.example.data.StoragePermissionState(),
+            selectedCategory = FileCategory.IMAGES,
+            allFiles = emptyList()
+        )
+        assertFalse(unpermittedState.permissionGranted)
+        assertFalse(unpermittedState.permissionState.isCategoryPermitted(FileCategory.IMAGES))
+
+        // 2. Permission granted, but no matching files found
+        val emptyState = FileManagerUiState(
+            permissionState = com.example.data.StoragePermissionState(imagesGranted = true),
+            selectedCategory = FileCategory.IMAGES,
+            allFiles = emptyList(),
+            isLoading = false,
+            errorMessage = null
+        )
+        assertTrue(emptyState.permissionGranted)
+        assertTrue(emptyState.permissionState.isCategoryPermitted(FileCategory.IMAGES))
+        assertTrue(emptyState.filteredFiles.isEmpty())
+        assertFalse(emptyState.isLoading)
+        assertNull(emptyState.errorMessage)
+
+        // 3. Loading state
+        val loadingState = FileManagerUiState(
+            permissionState = com.example.data.StoragePermissionState(imagesGranted = true),
+            isLoading = true
+        )
+        assertTrue(loadingState.isLoading)
+
+        // 4. Query failure state
+        val errorState = FileManagerUiState(
+            permissionState = com.example.data.StoragePermissionState(imagesGranted = true),
+            errorMessage = "Failed to query storage"
+        )
+        assertNotNull(errorState.errorMessage)
+    }
 }

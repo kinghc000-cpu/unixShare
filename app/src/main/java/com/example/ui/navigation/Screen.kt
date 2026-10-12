@@ -4,5 +4,6 @@ enum class Screen {
     HOME,
     PROFILE,
     SETTINGS,
-    FILE_MANAGER
+    FILE_MANAGER,
+    APP_MANAGER
 }

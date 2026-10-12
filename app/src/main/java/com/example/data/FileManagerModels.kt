@@ -86,6 +86,17 @@ data class PreparedShareBundle(
     val preparedTimestamp: Long = System.currentTimeMillis()
 )
 
+data class StorageDiagnostics(
+    val androidVersion: String = "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
+    val permissionStatus: Map<String, Boolean> = emptyMap(),
+    val totalFilesQueried: Int = 0,
+    val countPerCategory: Map<FileCategory, Int> = emptyMap(),
+    val lastQueryTimestampMillis: Long = System.currentTimeMillis(),
+    val lastError: String? = null,
+    val isPartialAccess: Boolean = false,
+    val safSelectedFilesCount: Int = 0
+)
+
 data class StoragePermissionState(
     val imagesGranted: Boolean = false,
     val videosGranted: Boolean = false,
@@ -111,6 +122,24 @@ data class StoragePermissionState(
         }
     }
 
+    fun isCategoryAccessPartial(category: FileCategory): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            when (category) {
+                FileCategory.ALL -> visualUserSelected && (!imagesGranted || !videosGranted || !audioGranted)
+                FileCategory.IMAGES -> visualUserSelected && !imagesGranted
+                FileCategory.VIDEOS -> visualUserSelected && !videosGranted
+                else -> false
+            }
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            when (category) {
+                FileCategory.ALL -> hasAnyPermission && !isFullyGranted
+                else -> false
+            }
+        } else {
+            false
+        }
+    }
+
     val hasAnyPermission: Boolean
         get() = imagesGranted || videosGranted || audioGranted || visualUserSelected || storageGranted
 
@@ -122,50 +151,46 @@ data class StoragePermissionState(
         }
 
     val isPartiallyGranted: Boolean
-        get() = hasAnyPermission && !isFullyGranted
+        get() = (hasAnyPermission && !isFullyGranted) || visualUserSelected
 
     companion object {
         fun getRequiredPermissionsForCategory(category: FileCategory): List<String> {
             return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 when (category) {
                     FileCategory.ALL -> {
-                        val list = mutableListOf(
+                        listOf(
                             android.Manifest.permission.READ_MEDIA_IMAGES,
                             android.Manifest.permission.READ_MEDIA_VIDEO,
                             android.Manifest.permission.READ_MEDIA_AUDIO
                         )
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            list.add(android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-                        }
-                        list
                     }
                     FileCategory.IMAGES -> {
-                        val list = mutableListOf(android.Manifest.permission.READ_MEDIA_IMAGES)
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            list.add(android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                            listOf(
+                                android.Manifest.permission.READ_MEDIA_IMAGES,
+                                android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+                            )
+                        } else {
+                            listOf(android.Manifest.permission.READ_MEDIA_IMAGES)
                         }
-                        list
                     }
                     FileCategory.VIDEOS -> {
-                        val list = mutableListOf(android.Manifest.permission.READ_MEDIA_VIDEO)
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            list.add(android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                            listOf(
+                                android.Manifest.permission.READ_MEDIA_VIDEO,
+                                android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+                            )
+                        } else {
+                            listOf(android.Manifest.permission.READ_MEDIA_VIDEO)
                         }
-                        list
                     }
                     FileCategory.AUDIO -> listOf(android.Manifest.permission.READ_MEDIA_AUDIO)
                     FileCategory.DOCUMENTS,
                     FileCategory.DOWNLOADS,
                     FileCategory.OTHER -> {
-                        val list = mutableListOf(
-                            android.Manifest.permission.READ_MEDIA_IMAGES,
-                            android.Manifest.permission.READ_MEDIA_VIDEO,
-                            android.Manifest.permission.READ_MEDIA_AUDIO
-                        )
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            list.add(android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-                        }
-                        list
+                        // On Android 13+, Documents/Downloads are not covered by READ_MEDIA_* permissions.
+                        // They are read via SAF or MediaStore without media permissions.
+                        emptyList()
                     }
                 }
             } else {

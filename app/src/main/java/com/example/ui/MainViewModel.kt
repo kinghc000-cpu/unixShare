@@ -10,6 +10,7 @@ import com.example.data.FileManagerRepository
 import com.example.data.MediaFileItem
 import com.example.data.PreparedShareBundle
 import com.example.data.SortOption
+import com.example.data.StorageDiagnostics
 import com.example.data.StorageInfo
 import com.example.data.StoragePermissionState
 import com.example.data.ThemeMode
@@ -33,9 +34,11 @@ data class ProfileEditState(
 
 data class FileManagerUiState(
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val permissionState: StoragePermissionState = StoragePermissionState(),
     val storageInfo: StorageInfo? = null,
     val allFiles: List<MediaFileItem> = emptyList(),
+    val safFiles: List<MediaFileItem> = emptyList(),
     val selectedCategory: FileCategory = FileCategory.ALL,
     val searchQuery: String = "",
     val sortOption: SortOption = SortOption.DATE_DESC,
@@ -43,13 +46,18 @@ data class FileManagerUiState(
     val selectedFileIds: Set<Long> = emptySet(),
     val preparedShareBundle: PreparedShareBundle? = null,
     val activeFileDetails: MediaFileItem? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val storageDiagnostics: StorageDiagnostics? = null,
+    val showDiagnosticsDialog: Boolean = false
 ) {
     val permissionGranted: Boolean
         get() = permissionState.hasAnyPermission
 
     val isCategoryPermitted: Boolean
         get() = permissionState.isCategoryPermitted(selectedCategory)
+
+    val isCategoryAccessPartial: Boolean
+        get() = permissionState.isCategoryAccessPartial(selectedCategory)
 
     val filteredFiles: List<MediaFileItem>
         get() {
@@ -88,13 +96,15 @@ data class FileManagerUiState(
 class MainViewModel(
     application: Application,
     private val repository: UserPreferencesRepository,
-    private val fileManagerRepository: FileManagerRepository = FileManagerRepository(application)
+    private val fileManagerRepository: FileManagerRepository = FileManagerRepository(application),
+    private val appsRepository: com.example.data.InstalledAppsRepository = com.example.data.InstalledAppsRepository(application)
 ) : AndroidViewModel(application) {
 
     constructor(application: Application) : this(
         application,
         UserPreferencesRepository(application),
-        FileManagerRepository(application)
+        FileManagerRepository(application),
+        com.example.data.InstalledAppsRepository(application)
     )
 
     constructor(
@@ -103,7 +113,8 @@ class MainViewModel(
     ) : this(
         application,
         repository,
-        FileManagerRepository(application)
+        FileManagerRepository(application),
+        com.example.data.InstalledAppsRepository(application)
     )
 
     val themeMode: StateFlow<ThemeMode> = repository.themeMode
@@ -125,6 +136,10 @@ class MainViewModel(
     private val _fileManagerUiState = MutableStateFlow(FileManagerUiState())
     val fileManagerUiState: StateFlow<FileManagerUiState> = _fileManagerUiState.asStateFlow()
 
+    // App Manager State
+    private val _appManagerUiState = MutableStateFlow(com.example.data.AppManagerUiState())
+    val appManagerUiState: StateFlow<com.example.data.AppManagerUiState> = _appManagerUiState.asStateFlow()
+
     init {
         initProfileEditState(repository.userProfile.value)
     }
@@ -135,6 +150,8 @@ class MainViewModel(
             _currentScreen.value = screen
             if (screen == Screen.PROFILE) {
                 initProfileEditState(userProfile.value)
+            } else if (screen == Screen.APP_MANAGER && _appManagerUiState.value.installedApps.isEmpty()) {
+                loadInstalledApps()
             }
         }
     }
@@ -261,21 +278,62 @@ class MainViewModel(
             val storage = fileManagerRepository.getStorageInfo()
 
             try {
-                val files = fileManagerRepository.queryAccessibleFiles(permissions)
+                val mediaFiles = fileManagerRepository.queryAccessibleFiles(permissions)
+                // Combine with user-selected SAF files ensuring no duplicates
+                val combinedFiles = mediaFiles.toMutableList()
+                for (safFile in _fileManagerUiState.value.safFiles) {
+                    if (combinedFiles.none { it.uri == safFile.uri }) {
+                        combinedFiles.add(0, safFile)
+                    }
+                }
+
+                val counts = FileCategory.entries.associateWith { cat ->
+                    if (cat == FileCategory.ALL) combinedFiles.size else combinedFiles.count { it.category == cat }
+                }
+
+                val diagnostics = StorageDiagnostics(
+                    androidVersion = "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
+                    permissionStatus = mapOf(
+                        "Images" to permissions.imagesGranted,
+                        "Videos" to permissions.videosGranted,
+                        "Audio" to permissions.audioGranted,
+                        "VisualUserSelected" to permissions.visualUserSelected,
+                        "StorageLegacy" to permissions.storageGranted
+                    ),
+                    totalFilesQueried = combinedFiles.size,
+                    countPerCategory = counts,
+                    lastQueryTimestampMillis = System.currentTimeMillis(),
+                    lastError = null,
+                    isPartialAccess = permissions.isPartiallyGranted,
+                    safSelectedFilesCount = _fileManagerUiState.value.safFiles.size
+                )
+
                 _fileManagerUiState.value = _fileManagerUiState.value.copy(
                     isLoading = false,
+                    isRefreshing = false,
                     storageInfo = storage,
-                    allFiles = files,
+                    allFiles = combinedFiles,
+                    storageDiagnostics = diagnostics,
                     errorMessage = null
                 )
             } catch (e: Exception) {
                 _fileManagerUiState.value = _fileManagerUiState.value.copy(
                     isLoading = false,
+                    isRefreshing = false,
                     storageInfo = storage,
                     errorMessage = e.localizedMessage ?: "Failed to query accessible files"
                 )
             }
         }
+    }
+
+    fun refreshFiles() {
+        _fileManagerUiState.value = _fileManagerUiState.value.copy(isRefreshing = true)
+        loadStorageAndFiles(_fileManagerUiState.value.permissionState)
+    }
+
+    fun setDiagnosticsDialogVisible(visible: Boolean) {
+        _fileManagerUiState.value = _fileManagerUiState.value.copy(showDiagnosticsDialog = visible)
     }
 
     fun loadStorageAndFiles(hasPermission: Boolean) {
@@ -373,18 +431,117 @@ class MainViewModel(
 
             if (resolvedFiles.isNotEmpty()) {
                 val currentFiles = _fileManagerUiState.value.allFiles.toMutableList()
+                val currentSaf = _fileManagerUiState.value.safFiles.toMutableList()
                 val currentSelected = _fileManagerUiState.value.selectedFileIds.toMutableSet()
                 for (file in resolvedFiles) {
                     if (currentFiles.none { it.uri == file.uri }) {
                         currentFiles.add(0, file)
+                        currentSaf.add(file)
                     }
                     currentSelected.add(file.id)
                 }
                 _fileManagerUiState.value = _fileManagerUiState.value.copy(
                     allFiles = currentFiles,
+                    safFiles = currentSaf,
                     selectedFileIds = currentSelected
                 )
             }
         }
+    }
+
+    fun addExternalFilesFromTreeUri(treeUri: Uri) {
+        viewModelScope.launch {
+            _fileManagerUiState.value = _fileManagerUiState.value.copy(isLoading = true)
+            val files = fileManagerRepository.resolveFilesFromTreeUri(treeUri)
+            if (files.isNotEmpty()) {
+                val currentFiles = _fileManagerUiState.value.allFiles.toMutableList()
+                val currentSaf = _fileManagerUiState.value.safFiles.toMutableList()
+                for (file in files) {
+                    if (currentFiles.none { it.uri == file.uri }) {
+                        currentFiles.add(0, file)
+                        currentSaf.add(file)
+                    }
+                }
+                _fileManagerUiState.value = _fileManagerUiState.value.copy(
+                    isLoading = false,
+                    allFiles = currentFiles,
+                    safFiles = currentSaf
+                )
+            } else {
+                _fileManagerUiState.value = _fileManagerUiState.value.copy(isLoading = false)
+            }
+        }
+    }
+
+    // ==========================================
+    // App Manager Logic
+    // ==========================================
+
+    fun loadInstalledApps() {
+        viewModelScope.launch {
+            _appManagerUiState.value = _appManagerUiState.value.copy(isLoading = true, errorMessage = null)
+            try {
+                val apps = appsRepository.getInstalledApps()
+                _appManagerUiState.value = _appManagerUiState.value.copy(
+                    isLoading = false,
+                    installedApps = apps,
+                    errorMessage = null
+                )
+            } catch (e: Exception) {
+                _appManagerUiState.value = _appManagerUiState.value.copy(
+                    isLoading = false,
+                    errorMessage = e.localizedMessage ?: "Failed to query installed apps"
+                )
+            }
+        }
+    }
+
+    fun toggleAppSelection(packageName: String) {
+        val current = _appManagerUiState.value.selectedPackageNames.toMutableSet()
+        if (current.contains(packageName)) {
+            current.remove(packageName)
+        } else {
+            current.add(packageName)
+        }
+        _appManagerUiState.value = _appManagerUiState.value.copy(selectedPackageNames = current)
+    }
+
+    fun selectAllApps() {
+        val all = _appManagerUiState.value.filteredApps.map { it.packageName }.toSet()
+        _appManagerUiState.value = _appManagerUiState.value.copy(selectedPackageNames = all)
+    }
+
+    fun clearAppSelection() {
+        _appManagerUiState.value = _appManagerUiState.value.copy(
+            selectedPackageNames = emptySet(),
+            preparedAppShareNotice = null
+        )
+    }
+
+    fun removeSelectedApp(packageName: String) {
+        val current = _appManagerUiState.value.selectedPackageNames.toMutableSet()
+        current.remove(packageName)
+        _appManagerUiState.value = _appManagerUiState.value.copy(selectedPackageNames = current)
+    }
+
+    fun setAppSearchQuery(query: String) {
+        _appManagerUiState.value = _appManagerUiState.value.copy(searchQuery = query)
+    }
+
+    fun setAppManagerTab(tab: com.example.data.AppManagerTab) {
+        _appManagerUiState.value = _appManagerUiState.value.copy(activeTab = tab)
+    }
+
+    fun prepareSelectedAppsForSharing() {
+        val state = _appManagerUiState.value
+        val count = state.selectedCount
+        if (count > 0) {
+            val notice = "$count app(s) staged (${state.formattedSelectedTotalSize}). Peer APK transfer pipeline is pending Phase 3 networking."
+            _appManagerUiState.value = state.copy(preparedAppShareNotice = notice)
+        }
+    }
+
+    fun clearPreparedAppShareNotice() {
+        _appManagerUiState.value = _appManagerUiState.value.copy(preparedAppShareNotice = null)
     }
 }
