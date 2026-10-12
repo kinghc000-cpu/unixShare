@@ -1,0 +1,6 @@
+{
+  "name": "Unex SHARE",
+  "description": "Fast, reliable device-to-device sharing foundation with Arabic/English localization and customizable themes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
